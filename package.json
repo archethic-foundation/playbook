@@ -1,0 +1,12 @@
+{
+  "name": "playbook",
+  "version": "1.0.0",
+  "description": "Archethic Playbooks to test and stress the system",
+  "scripts": {},
+  "author": "Archethic Foundation",
+  "license": "AGPL-3",
+  "type": "module",
+  "dependencies": {
+    "archethic": "../libjs/dist"
+  }
+}
