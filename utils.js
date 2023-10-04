@@ -31,3 +31,11 @@ export async function requestFaucet(address, endpoint = "https://testnet.archeth
         process.exit(1)
     }
 }
+
+export async function findTokenBalance(archethic, address, tokenAddress) {
+    const balance = await archethic.network.getBalance(address)
+    const tokenBalance = balance.token.find(x => {
+        return x.address == tokenAddress
+    }) 
+    return tokenBalance
+}
