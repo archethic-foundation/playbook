@@ -7,6 +7,7 @@
   "license": "AGPL-3",
   "type": "module",
   "dependencies": {
-    "archethic": "../libjs/dist"
+    "archethic": "../libjs/dist",
+    "axios": "^1.5.1"
   }
 }
