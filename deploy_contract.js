@@ -116,7 +116,7 @@ async function run() {
                     const { lastTransaction: { data: { content: lastContent }}} = await archethic.network.rawGraphQLQuery(`
                     query
                     {
-                      lastTransaction(address: "${uint8ArrayToHex(contractTx.address)}") {
+                      lastTransaction(address: "${Utils.uint8ArrayToHex(contractTx.address)}") {
                         data {
                             content
                         }
