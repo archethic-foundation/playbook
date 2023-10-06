@@ -2,7 +2,6 @@ import Archethic, { Crypto, Utils } from "archethic"
 
 import { randomBytes } from "crypto"
 import {requestFaucet } from "./utils.js"
-import { uint8ArrayToHex } from "archethic/utils.js"
 
 const originPrivateKey = Utils.originPrivateKey
 let archethic
