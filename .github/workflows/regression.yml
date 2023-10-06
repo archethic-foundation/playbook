@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  strategy:
+    max-parallel: 1
+
   keychain-creation:
     runs-on: ubuntu-latest
     steps: 
