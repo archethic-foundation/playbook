@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-
   keychain-creation:
     runs-on: ubuntu-latest
     steps: 
@@ -30,7 +29,6 @@ jobs:
       - run: node keychain_update.js 
 
   send-uco:
-    concurrency: "faucet"
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v2
@@ -42,7 +40,7 @@ jobs:
       - run: node send_uco.js 
 
   mint-fungible-token:
-    concurrency: "faucet"
+    needs: [send-uco]
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v2
@@ -54,7 +52,7 @@ jobs:
       - run: node mint_fungible_token.js 
 
   mint-non-fungible-token:
-    concurrency: "faucet"
+    needs: [mint-fungible-token]
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v2
@@ -66,7 +64,7 @@ jobs:
       - run: node mint_non_fungible_token.js 
 
   send-token:
-    concurrency: "faucet"
+    needs: [mint-non-fungible-token]
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v2
@@ -78,7 +76,7 @@ jobs:
       - run: node send_token.js 
 
   deploy-contract:
-    concurrency: "faucet"
+    needs: [send-token]
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v2
