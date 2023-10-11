@@ -86,3 +86,16 @@ jobs:
           node-version: '18.x'
       - run: npm ci
       - run: node deploy_contract.js 
+
+  deploy-website:
+    needs: [deploy-contract]
+    runs-on: ubuntu-latest
+    steps: 
+      - uses: actions/checkout@v2
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: '18.x'
+      - run: npm ci
+      - run: node deploy_website.js 
+
