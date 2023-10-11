@@ -1,4 +1,4 @@
-import Archethic, { Crypto, Utils } from "archethic"
+import Archethic, { Crypto, Utils } from "@archethicjs/sdk"
 
 import { randomBytes } from "crypto"
 import {requestFaucet } from "./utils.js"

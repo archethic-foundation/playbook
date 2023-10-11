@@ -1,4 +1,4 @@
-import Archethic, { Keychain, Crypto, Utils } from "archethic"
+import Archethic, { Keychain, Crypto, Utils } from "@archethicjs/sdk"
 import { randomBytes } from "crypto"
 
 const originPrivateKey = Utils.originPrivateKey;

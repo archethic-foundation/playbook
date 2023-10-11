@@ -7,7 +7,10 @@
   "license": "AGPL-3",
   "type": "module",
   "dependencies": {
-    "archethic": "^1.8.2",
-    "axios": "^1.5.1"
+    "@archethicjs/aeweb-cli": "^0.7.3",
+    "@archethicjs/sdk": "^1.19.0",
+    "axios": "^1.5.1",
+    "glob": "^10.3.10",
+    "parse-gitignore": "^2.0.0"
   }
 }
