@@ -111,7 +111,7 @@ async function run() {
 
                     console.log(`Contract's call transaction created - ${Utils.uint8ArrayToHex(callTx.address)}`)
 
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 5000));
 
                     const { lastTransaction: { data: { content: lastContent }}} = await archethic.network.rawGraphQLQuery(`
                     query
