@@ -6,76 +6,90 @@ import * as glob from "glob"
 import parse from "parse-gitignore"
 
 import { randomBytes } from "crypto"
-import {requestFaucet } from "./utils.js"
+import { requestFaucet } from "./utils.js"
+import { getLogger } from "./logger.js"
 
+const logger = getLogger()
 const originPrivateKey = Utils.originPrivateKey;
 
 async function run() {
-    const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
-    const websitePath = process.env["WEBSITE_PATH"] || "./website_example"
-    
-    const archethic = new Archethic(endpoint)
-    await archethic.connect()
 
-    const baseSeed = Utils.uint8ArrayToHex(randomBytes(32))
+  return new Promise(async function (resolve, reject) {
+    try {
+      const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
+      const websitePath = process.env["WEBSITE_PATH"] || "./website_example"
 
-    const aeweb = new AEWeb(archethic)
+      const archethic = new Archethic(endpoint)
+      await archethic.connect()
 
-    const baseAddress = Crypto.deriveAddress(baseSeed, 0)
+      const baseSeed = Utils.uint8ArrayToHex(randomBytes(32))
 
-    const { refSeed: refSeed, filesSeed: filesSeed } = getSeeds(baseSeed)
-    const refAddress = Crypto.deriveAddress(refSeed, 0)
-    const filesAddress = Crypto.deriveAddress(filesSeed, 0)
+      const aeweb = new AEWeb(archethic)
 
-    await requestFaucet(Utils.uint8ArrayToHex(baseAddress), endpoint)
+      const baseAddress = Crypto.deriveAddress(baseSeed, 0)
 
-    const normalizedPath = path.normalize(websitePath.endsWith(path.sep) ? folderPath.slice(0, -1) : websitePath)
-    const files = getFiles(normalizedPath)
-    if (files.length === 0) {
-      throw 'folder "' + path.basename(websitePath) + '" is empty'
-    }
+      const { refSeed: refSeed, filesSeed: filesSeed } = getSeeds(baseSeed)
+      const refAddress = Crypto.deriveAddress(refSeed, 0)
+      const filesAddress = Crypto.deriveAddress(filesSeed, 0)
 
-    files.forEach(({ filePath, data }) => aeweb.addFile(filePath, data))
 
-    let filesIndex = 0
-    console.log('Creating transactions ...')
+      await requestFaucet(Utils.uint8ArrayToHex(baseAddress), endpoint)
 
-    console.log('Building files transactions...')
-    const transactions = aeweb.getFilesTransactions().map(tx => {
-      const index = filesIndex
-      filesIndex++
 
-      return tx
-        .build(filesSeed, index)
+      const normalizedPath = path.normalize(websitePath.endsWith(path.sep) ? folderPath.slice(0, -1) : websitePath)
+      const files = getFiles(normalizedPath)
+      if (files.length === 0) {
+        reject('folder "' + path.basename(websitePath) + '" is empty')
+        return
+      }
+
+      files.forEach(({ filePath, data }) => aeweb.addFile(filePath, data))
+
+      let filesIndex = 0
+      logger.debug('Creating transactions ...')
+
+      logger.debug('Building files transactions...')
+      const transactions = aeweb.getFilesTransactions().map(tx => {
+        const index = filesIndex
+        filesIndex++
+
+        return tx
+          .build(filesSeed, index)
+          .originSign(originPrivateKey)
+      })
+
+      logger.debug('Building reference transaction...')
+      const refTx = await aeweb.getRefTransaction(transactions)
+      refTx
+        .build(refSeed, 0)
         .originSign(originPrivateKey)
-    })
 
-    console.log('Building reference transaction...')
-    const refTx = await aeweb.getRefTransaction(transactions)
-    refTx
-      .build(refSeed, 0)
-      .originSign(originPrivateKey)
+      transactions.push(refTx)
 
-    transactions.push(refTx)
+      const { refTxFees, filesTxFees } = await estimateTxsFees(archethic, transactions)
 
-    const { refTxFees, filesTxFees } = await estimateTxsFees(archethic, transactions)
+      logger.debug("Create funding transaction...")
 
-    console.log("Create funding transaction...")
+      const transferTx = archethic.transaction.new()
+        .setType('transfer')
+        .addUCOTransfer(refAddress, refTxFees)
+        .addUCOTransfer(filesAddress, filesTxFees)
+        .build(baseSeed, 0)
+        .originSign(originPrivateKey)
 
-    const transferTx = archethic.transaction.new()
-      .setType('transfer')
-      .addUCOTransfer(refAddress, refTxFees)
-      .addUCOTransfer(filesAddress, filesTxFees)
-      .build(baseSeed, 0)
-      .originSign(originPrivateKey)
+      transactions.unshift(transferTx)
 
-    transactions.unshift(transferTx)
+      logger.debug('Sending ' + transactions.length + ' transactions...')
 
-    console.log('Sending ' + transactions.length + ' transactions...')
+      await sendTransactions(transactions, 0, endpoint)
 
-    await sendTransactions(transactions, 0, endpoint)
-    console.log(`Website is deployed at: ${endpoint}/api/web_hosting/${Utils.uint8ArrayToHex(refAddress)}/`)
-    process.exit(0)
+      resolve(`Website is deployed at: ${endpoint}/api/web_hosting/${Utils.uint8ArrayToHex(refAddress)}/`)
+      return
+    } catch (e) {
+      reject(e)
+      return
+    }
+  })
 }
 
 function getSeeds(baseSeed) {
@@ -154,7 +168,7 @@ function getFilters(folderPath, filters) {
 
   const gitIgnoreFilePath = path.join(folderPath, '.gitignore')
   if (fs.existsSync(gitIgnoreFilePath)) {
-    console.log('Ignore files from: ' + gitIgnoreFilePath)
+    logger.debug('Ignore files from: ' + gitIgnoreFilePath)
     newFilters = parse(fs.readFileSync(gitIgnoreFilePath))['patterns']
     newFilters.unshift('.gitignore')
     newFilters.unshift('.git')
@@ -168,14 +182,14 @@ function getFilters(folderPath, filters) {
 
 async function sendTransactions(transactions, index, endpoint) {
   return new Promise(async (resolve, reject) => {
-    console.log('Transaction ' + (index + 1) + '...')
+    logger.debug('Transaction ' + (index + 1) + '...')
     const tx = transactions[index]
 
     tx
       .on('requiredConfirmation', async (nbConf) => {
-        console.log('Transaction confirmed !')
-        console.log('See transaction in explorer:', endpoint + '/explorer/transaction/' + Utils.uint8ArrayToHex(tx.address))
-        console.log('-----------')
+        logger.debug('Transaction confirmed !')
+        logger.debug('See transaction in explorer:', endpoint + '/explorer/transaction/' + Utils.uint8ArrayToHex(tx.address))
+        logger.debug('-----------')
 
         if (index + 1 == transactions.length) {
           resolve()
@@ -187,9 +201,24 @@ async function sendTransactions(transactions, index, endpoint) {
       })
       .on('error', (context, reason) => reject(reason))
       .on('timeout', (nbConf) => reject('Transaction fell in timeout'))
-      .on('sent', () => console.log('Waiting transaction validation...'))
+      .on('sent', () => logger.debug('Waiting transaction validation...'))
       .send(75)
   })
 }
 
-run().catch(console.log)
+run()
+  .then((msg) => {
+    logger.info(msg)
+    return 0
+  })
+  .catch((msg) => {
+    logger.error(msg)
+    return 1
+  })
+  .then(async (exitCode) => {
+    // wait 30secs after the run is done
+    // to allow the logger to send the logs to Loki
+    await new Promise(r => setTimeout(r, 30_000));
+    process.exit(exitCode)
+  })
+
