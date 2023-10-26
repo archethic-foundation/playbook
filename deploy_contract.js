@@ -1,8 +1,10 @@
 import Archethic, { Crypto, Utils } from "@archethicjs/sdk"
 
 import { randomBytes } from "crypto"
-import {requestFaucet } from "./utils.js"
+import { requestFaucet } from "./utils.js"
+import { getLogger } from "./logger.js"
 
+const logger = getLogger()
 const originPrivateKey = Utils.originPrivateKey
 let archethic
 
@@ -12,7 +14,7 @@ function contractCode() {
 condition triggered_by: transaction, on: exec(), as: [
   content: Crypto.hash(contract.code)
 ]
-    
+
 actions triggered_by: transaction, on: exec() do
   Contract.set_content "Contract executed"
 end`
@@ -26,10 +28,10 @@ async function getContractTransaction(seed) {
 
     const encryptedSecretKey = Crypto.ecEncrypt(secretKey, storageNoncePublicKey);
     const authorizedKeys = [
-      {
-        publicKey: storageNoncePublicKey,
-        encryptedSecretKey: encryptedSecretKey,
-      }
+        {
+            publicKey: storageNoncePublicKey,
+            encryptedSecretKey: encryptedSecretKey,
+        }
     ]
 
     return archethic.transaction.new()
@@ -52,68 +54,72 @@ function getCallTransaction(contractAddress, callerSeed) {
 }
 
 async function run() {
-    const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
-    
-    archethic = new Archethic(endpoint)
-    await archethic.connect()
+    return new Promise(async function (resolve, reject) {
+        try {
+            const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
 
-    const contractSeed = randomBytes(32)
-    const contractAddress = Crypto.deriveAddress(contractSeed)
+            archethic = new Archethic(endpoint)
+            await archethic.connect()
 
-    const callerSeed = randomBytes(32)
-    const callerAddress = Crypto.deriveAddress(callerSeed)
+            const contractSeed = randomBytes(32)
+            const contractAddress = Crypto.deriveAddress(contractSeed)
 
-    console.log("Request funds from faucet...")
-    await requestFaucet(Utils.uint8ArrayToHex(contractAddress), endpoint)
-    await requestFaucet(Utils.uint8ArrayToHex(callerAddress), endpoint)
+            const callerSeed = randomBytes(32)
+            const callerAddress = Crypto.deriveAddress(callerSeed)
 
-    const contractBalance = await archethic.network.getBalance(contractAddress)
-    if (Utils.fromBigInt(contractBalance.uco) != 100) {
-        console.log(`Invalid balance for the contract's address`)
-        process.exit(1)
-    }
+            logger.debug("Request funds from faucet...")
 
-    const callerBalance = await archethic.network.getBalance(callerAddress)
-    if (Utils.fromBigInt(callerBalance.uco) != 100) {
-        console.log(`Invalid balance for the caller's address`)
-        process.exit(1)
-    }
+            await requestFaucet(Utils.uint8ArrayToHex(contractAddress), endpoint)
+            await requestFaucet(Utils.uint8ArrayToHex(callerAddress), endpoint)
 
-    const contractTx = await getContractTransaction(contractSeed)
 
-    contractTx
-        .on("sent", () => {
-            console.log("Contract transaction sent")
-            console.log("Await validation ...")
-        })
-        .on("error", (context, reason) => {
-            console.log(`Contract transaction failed - ${reason}`)
-            process.exit(1)
-        })
-        .on("requiredConfirmation", (confirmations, sender) => {
-            sender.unsubscribe()
+            const contractBalance = await archethic.network.getBalance(contractAddress)
+            if (Utils.fromBigInt(contractBalance.uco) != 100) {
+                reject(`Invalid balance for the contract's address`)
+                return
+            }
 
-            console.log(`Contract transaction created - ${Utils.uint8ArrayToHex(contractTx.address)}`)
+            const callerBalance = await archethic.network.getBalance(callerAddress)
+            if (Utils.fromBigInt(callerBalance.uco) != 100) {
+                reject(`Invalid balance for the caller's address`)
+                return
+            }
 
-            const callTx = getCallTransaction(contractTx.address, callerSeed)
+            const contractTx = await getContractTransaction(contractSeed)
 
-            callTx
+            contractTx
                 .on("sent", () => {
-                    console.log("Contract's call transaction sent")
-                    console.log("Await validation ...")
+                    logger.debug("Contract transaction sent")
+                    logger.debug("Await validation ...")
                 })
                 .on("error", (context, reason) => {
-                    console.log(`Contract's call transaction failed - ${reason}`)
-                    process.exit(1)
+                    reject(`Contract transaction failed - ${reason}`)
+                    return
                 })
-                .on("requiredConfirmation", async (confirmations, sender) => {
+                .on("requiredConfirmation", (confirmations, sender) => {
                     sender.unsubscribe()
 
-                    console.log(`Contract's call transaction created - ${Utils.uint8ArrayToHex(callTx.address)}`)
+                    logger.debug(`Contract transaction created - ${Utils.uint8ArrayToHex(contractTx.address)}`)
 
-                    await new Promise(r => setTimeout(r, 5000));
+                    const callTx = getCallTransaction(contractTx.address, callerSeed)
 
-                    const { lastTransaction: { data: { content: lastContent }}} = await archethic.network.rawGraphQLQuery(`
+                    callTx
+                        .on("sent", () => {
+                            logger.debug("Contract's call transaction sent")
+                            logger.debug("Await validation ...")
+                        })
+                        .on("error", (context, reason) => {
+                            reject(`Contract's call transaction failed - ${reason}`)
+                            return
+                        })
+                        .on("requiredConfirmation", async (confirmations, sender) => {
+                            sender.unsubscribe()
+
+                            logger.debug(`Contract's call transaction created - ${Utils.uint8ArrayToHex(callTx.address)}`)
+
+                            await new Promise(r => setTimeout(r, 2000));
+
+                            const { lastTransaction: { data: { content: lastContent } } } = await archethic.network.rawGraphQLQuery(`
                     query
                     {
                       lastTransaction(address: "${Utils.uint8ArrayToHex(contractTx.address)}") {
@@ -122,19 +128,40 @@ async function run() {
                         }
                       }
                     }`)
-                    
-                    if (lastContent != "Contract executed") {
-                        console.log(`Contract self trigger transaction not executed`)
-                        process.exit(1)
-                    }
 
-                    console.log("Contract's call transaction executed with success")
+                            if (lastContent != "Contract executed") {
+                                reject(`Contract self trigger transaction not executed`)
+                                return
+                            }
 
-                    process.exit(0)
+                            resolve("Contract's call transaction executed with success")
+                            return
+                        })
+                        .send()
                 })
                 .send()
-        })
-        .send()
+        } catch (e) {
+            reject(e)
+            return
+        }
+    })
 }
 
 run()
+    .then((msg) => {
+        logger.info(msg)
+        return 0
+    })
+    .catch((msg) => {
+        logger.error(msg)
+        return 1
+    })
+    .then(async (exitCode) => {
+        // wait 30secs after the run is done
+        // to allow the logger to send the logs to Loki
+        await new Promise(r => setTimeout(r, 30_000));
+        process.exit(exitCode)
+    })
+
+
+

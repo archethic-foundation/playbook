@@ -1,6 +1,8 @@
 import Archethic, { Keychain, Crypto, Utils } from "@archethicjs/sdk"
 import { randomBytes } from "crypto"
+import { getLogger } from "./logger.js"
 
+const logger = getLogger()
 const originPrivateKey = Utils.originPrivateKey;
 let archethic
 
@@ -8,11 +10,11 @@ function generateKeychainTransaction(accessPublicKey) {
     const keychainSeed = randomBytes(32)
 
     const keychain = new Keychain(keychainSeed)
-    .addService("uco", "m/650'/0/0")
-    .addAuthorizedPublicKey(accessPublicKey)
+        .addService("uco", "m/650'/0/0")
+        .addAuthorizedPublicKey(accessPublicKey)
 
-   return archethic.account.newKeychainTransaction(keychain, 0)
-    .originSign(originPrivateKey)
+    return archethic.account.newKeychainTransaction(keychain, 0)
+        .originSign(originPrivateKey)
 }
 
 function generateKeychainAccessTransaction(accessSeed, keychainAddress) {
@@ -23,61 +25,81 @@ function generateKeychainAccessTransaction(accessSeed, keychainAddress) {
 
 async function run() {
 
-    const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
-    
-    archethic = new Archethic(endpoint)
-    await archethic.connect()
+    return new Promise(async function (resolve, reject) {
+        try {
+            const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
 
-    const accessSeed = randomBytes(32)
-    const { publicKey: accessPublicKey } = Crypto.deriveKeyPair(accessSeed, 0);
+            archethic = new Archethic(endpoint)
+            await archethic.connect()
 
-    const keychainTx = generateKeychainTransaction(accessPublicKey)
+            const accessSeed = randomBytes(32)
+            const { publicKey: accessPublicKey } = Crypto.deriveKeyPair(accessSeed, 0);
 
-    keychainTx
-        .on("sent", () => {
-            console.log("Keychain transaction sent")
-            console.log("Await validation ...")
-        })
-        .on("requiredConfirmation", async (_confirmations, sender) => {
-            sender.unsubscribe()
+            const keychainTx = generateKeychainTransaction(accessPublicKey)
 
-            console.log(`Keychain transaction created - ${Utils.uint8ArrayToHex(keychainTx.address)}`)
-
-            const accessKeychainTx = generateKeychainAccessTransaction(accessSeed, keychainTx.address)
-
-            accessKeychainTx
+            keychainTx
                 .on("sent", () => {
-                    console.log("Keychain access transaction sent")
-                    console.log("Await validation ...")
+                    logger.debug("Keychain transaction sent")
+                    logger.debug("Await validation ...")
                 })
-                .on("requiredConfirmation", async (confirmation, sender) => {
+                .on("requiredConfirmation", async (_confirmations, sender) => {
                     sender.unsubscribe()
 
-                    console.log(`Keychain access transaction created - ${Utils.uint8ArrayToHex(accessKeychainTx.address)}`)
+                    logger.debug(`Keychain transaction created - ${Utils.uint8ArrayToHex(keychainTx.address)}`)
 
-                    console.log("Keychain fetching...")
-                    const keychain = await archethic.account.getKeychain(accessSeed)
+                    const accessKeychainTx = generateKeychainAccessTransaction(accessSeed, keychainTx.address)
 
-                    if (new TextDecoder().decode(keychainTx.data.content) != JSON.stringify(keychain.toDID())) {
-                        console.log("Keychain doesn't match")
-                        process.exit(1)
-                    }
+                    accessKeychainTx
+                        .on("sent", () => {
+                            logger.debug("Keychain access transaction sent")
+                            logger.debug("Await validation ...")
+                        })
+                        .on("requiredConfirmation", async (confirmation, sender) => {
+                            sender.unsubscribe()
 
-                    console.log("Keychain retrieved with success")
+                            logger.debug(`Keychain access transaction created - ${Utils.uint8ArrayToHex(accessKeychainTx.address)}`)
 
-                    process.exit(0);
+                            logger.debug("Keychain fetching...")
+                            const keychain = await archethic.account.getKeychain(accessSeed)
+
+                            if (new TextDecoder().decode(keychainTx.data.content) != JSON.stringify(keychain.toDID())) {
+                                reject("Keychain doesn't match")
+                                return
+                            }
+
+                            resolve("Keychain retrieved with success")
+                            return
+                        })
+                        .on("error", (context, reason) => {
+                            reject(`Keychain accesss transaction failed - ${reason}`)
+                            return
+                        })
+                        .send()
                 })
                 .on("error", (context, reason) => {
-                    console.log(`Keychain accesss transaction failed - ${reason}`)
-                    process.exit(1)
+                    reject(`Keychain transaction failed - ${reason}`)
+                    return
                 })
                 .send()
-        })
-        .on("error", (context, reason) => {
-            console.log(`Keychain transaction failed - ${reason}`)
-            process.exit(1)
-        })
-        .send()
+        } catch (e) {
+            reject(e)
+            return
+        }
+    })
 }
 
 run()
+    .then((msg) => {
+        logger.info(msg)
+        return 0
+    })
+    .catch((msg) => {
+        logger.error(msg)
+        return 1
+    })
+    .then(async (exitCode) => {
+        // wait 30secs after the run is done
+        // to allow the logger to send the logs to Loki
+        await new Promise(r => setTimeout(r, 30_000));
+        process.exit(exitCode)
+    })

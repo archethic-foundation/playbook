@@ -1,9 +1,11 @@
 import Archethic, { Crypto, Utils } from "@archethicjs/sdk"
 import { randomBytes } from "crypto"
+import { requestFaucet, findTokenBalance } from "./utils.js"
+import { getLogger } from "./logger.js"
 
+const logger = getLogger()
 const originPrivateKey = Utils.originPrivateKey;
 
-import {requestFaucet, findTokenBalance } from "./utils.js"
 let archethic
 
 function getMintTokenTransaction() {
@@ -27,91 +29,111 @@ function getTokenTransferTransaction(recipient_address, amount, tokenAddress) {
 }
 
 async function run() {
-    const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
-    archethic = new Archethic(endpoint)
-    await archethic.connect()
-    
-    const seed = randomBytes(32)
-    const address = Crypto.deriveAddress(seed)
+    return new Promise(async function (resolve, reject) {
+        try {
+            const endpoint = process.env["ENDPOINT"] || "https://testnet.archethic.net"
+            archethic = new Archethic(endpoint)
+            await archethic.connect()
 
-    console.log("Request funds from faucet...")
-    await requestFaucet(Utils.uint8ArrayToHex(address), endpoint)
+            const seed = randomBytes(32)
+            const address = Crypto.deriveAddress(seed)
 
-    const senderBalance = await archethic.network.getBalance(address)
-    if (Utils.fromBigInt(senderBalance.uco) != 100) {
-        console.log(`Invalid balance for the sender's address`)
-        process.exit(1)
-    }
+            logger.debug("Request funds from faucet...")
+            await requestFaucet(Utils.uint8ArrayToHex(address), endpoint)
 
-    console.log("Funds received from faucet")
+            const senderBalance = await archethic.network.getBalance(address)
+            if (Utils.fromBigInt(senderBalance.uco) != 100) {
+                reject(`Invalid balance for the sender's address`)
+                return
+            }
 
-    const mintTx = getMintTokenTransaction()
-        .build(seed, 0)
-        .originSign(originPrivateKey)
+            logger.debug("Funds received from faucet")
 
-    mintTx
-    .on("sent", () => {
-        console.log("Token transaction sent")
-        console.log("Await validation ...")
-    })
-    .on("requiredConfirmation", async (_confirmations, sender) => {
-        sender.unsubscribe()
+            const mintTx = getMintTokenTransaction()
+                .build(seed, 0)
+                .originSign(originPrivateKey)
 
-        console.log(`Token transaction created - ${Utils.uint8ArrayToHex(mintTx.address)}`)
+            mintTx
+                .on("sent", () => {
+                    logger.debug("Token transaction sent")
+                    logger.debug("Await validation ...")
+                })
+                .on("requiredConfirmation", async (_confirmations, sender) => {
+                    sender.unsubscribe()
 
-        const { amount: tokenAmount, address: tokenAddress } = await findTokenBalance(archethic, address, Utils.uint8ArrayToHex(mintTx.address).toUpperCase())
+                    logger.debug(`Token transaction created - ${Utils.uint8ArrayToHex(mintTx.address)}`)
 
-        if (Utils.fromBigInt(tokenAmount) != 100) {
-            console.log(`Invalid balance for the sender's address (${Utils.uint8ArrayToHex(address)}) after send and should be 100 token`)
-            process.exit(1)
+                    const { amount: tokenAmount, address: tokenAddress } = await findTokenBalance(archethic, address, Utils.uint8ArrayToHex(mintTx.address).toUpperCase())
+
+                    if (Utils.fromBigInt(tokenAmount) != 100) {
+                        reject(`Invalid balance for the sender's address (${Utils.uint8ArrayToHex(address)}) after send and should be 100 token`)
+                        return
+                    }
+
+                    logger.debug("100 MKT tokens have been minted")
+
+                    const recipientAddress = Crypto.deriveAddress(randomBytes(32))
+
+                    const transferTx = getTokenTransferTransaction(recipientAddress, 20, tokenAddress)
+                        .build(seed, 1)
+                        .originSign(originPrivateKey)
+
+                    transferTx
+                        .on("sent", () => {
+                            logger.debug("Transfer transaction sent")
+                            logger.debug("Await validation ...")
+                        })
+                        .on("requiredConfirmation", async (_confirmations, sender) => {
+                            sender.unsubscribe()
+
+                            logger.debug(`Transfer transaction created - ${Utils.uint8ArrayToHex(transferTx.address)}`)
+
+                            const { amount: receivedTokens } = await findTokenBalance(archethic, recipientAddress, tokenAddress)
+                            if (Utils.fromBigInt(receivedTokens) != 20) {
+                                reject(`Invalid balance for the recipient's address (${Utils.uint8ArrayToHex(recipientAddress)}) after send and should be 20 token`)
+                                return
+                            }
+
+                            const { amount: remainingTokens } = await findTokenBalance(archethic, Utils.uint8ArrayToHex(address), tokenAddress)
+                            if (Utils.fromBigInt(remainingTokens) != 80) {
+                                reject(`Invalid balance for the sender's address (${Utils.uint8ArrayToHex(address)}) after send and should be 80 tokens`)
+                                return
+                            }
+
+                            resolve("Token transfered with success")
+                            return
+
+                        })
+                        .on("error", (context, reason) => {
+                            reject(`Transfer transaction failed - ${reason}`)
+                            return
+                        })
+                        .send()
+                })
+                .on("error", (context, reason) => {
+                    reject(`Token transaction failed - ${reason}`)
+                    return
+                })
+                .send()
+        } catch (e) {
+            reject(e)
+            return
         }
-
-        console.log("100 MKT tokens have been minted")
-
-        const recipientAddress = Crypto.deriveAddress(randomBytes(32))
-
-        const transferTx = getTokenTransferTransaction(recipientAddress, 20, tokenAddress)
-            .build(seed, 1)
-            .originSign(originPrivateKey)
-
-        transferTx
-            .on("sent", () => {
-                console.log("Transfer transaction sent")
-                console.log("Await validation ...")
-            })
-            .on("requiredConfirmation", async(_confirmations, sender) => {
-                sender.unsubscribe()
-
-                console.log(`Transfer transaction created - ${Utils.uint8ArrayToHex(transferTx.address)}`)
-
-                const { amount: receivedTokens } = await findTokenBalance(archethic, recipientAddress, tokenAddress)
-                if (Utils.fromBigInt(receivedTokens) != 20) {
-                    console.log(`Invalid balance for the recipient's address (${Utils.uint8ArrayToHex(recipientAddress)}) after send and should be 20 token`)
-                    process.exit(1)
-                }
-    
-                const { amount: remainingTokens } = await findTokenBalance(archethic, Utils.uint8ArrayToHex(address), tokenAddress)
-                if (Utils.fromBigInt(remainingTokens) != 80) {
-                    console.log(`Invalid balance for the sender's address (${Utils.uint8ArrayToHex(address)}) after send and should be 80 tokens`)
-                    process.exit(1)
-                }
-
-                console.log("Token transfered with success")
-
-                process.exit(0)
-
-            })
-            .on("error", (context, reason) => {
-                console.log(`Transfer transaction failed - ${reason}`)
-                process.exit(1)
-            })
-            .send()
     })
-    .on("error", (context, reason) => {
-        console.log(`Token transaction failed - ${reason}`)
-        process.exit(1)
-    })
-    .send()
 }
 
 run()
+    .then((msg) => {
+        logger.info(msg)
+        return 0
+    })
+    .catch((msg) => {
+        logger.error(msg)
+        return 1
+    })
+    .then(async (exitCode) => {
+        // wait 30secs after the run is done
+        // to allow the logger to send the logs to Loki
+        await new Promise(r => setTimeout(r, 30_000));
+        process.exit(exitCode)
+    })

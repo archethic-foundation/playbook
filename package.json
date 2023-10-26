@@ -11,6 +11,8 @@
     "@archethicjs/sdk": "^1.19.0",
     "axios": "^1.5.1",
     "glob": "^10.3.10",
-    "parse-gitignore": "^2.0.0"
+    "parse-gitignore": "^2.0.0",
+    "winston": "^3.11.0",
+    "winston-loki": "^6.0.8"
   }
 }
