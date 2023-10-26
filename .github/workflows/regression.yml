@@ -2,100 +2,103 @@ name: regression
 
 on:
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: "0 */1 * * *"
   workflow_dispatch:
+
+env:
+  LOKI_TOKEN: ${{secrets.LOKI_TOKEN}}
+  LOKI_USER: ${{secrets.LOKI_USER}}
 
 jobs:
   keychain-creation:
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node keychain_creation.js 
+      - run: node keychain_creation.js
 
   keychain-update:
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node keychain_update.js 
+      - run: node keychain_update.js
 
   send-uco:
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node send_uco.js 
+      - run: node send_uco.js
 
   mint-fungible-token:
     needs: [send-uco]
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node mint_fungible_token.js 
+      - run: node mint_fungible_token.js
 
   mint-non-fungible-token:
     needs: [mint-fungible-token]
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node mint_non_fungible_token.js 
+      - run: node mint_non_fungible_token.js
 
   send-token:
     needs: [mint-non-fungible-token]
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node send_token.js 
+      - run: node send_token.js
 
   deploy-contract:
     needs: [send-token]
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node deploy_contract.js 
+      - run: node deploy_contract.js
 
   deploy-website:
     needs: [deploy-contract]
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
-          node-version: '18.x'
+          node-version: "18.x"
       - run: npm ci
-      - run: node deploy_website.js 
-
+      - run: node deploy_website.js

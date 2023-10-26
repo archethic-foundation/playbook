@@ -3,8 +3,14 @@ import LokiTransport from 'winston-loki'
 
 let logger
 
-const user = ``
-const password = ``
+const user = process.env.LOKI_USER
+const token = process.env.LOKI_TOKEN
+
+if (!user)
+    throw new Error("missing env vars: LOKI_USER")
+
+if (!token)
+    throw new Error("missing env vars: LOKI_TOKEN")
 
 const initializeLogger = () => {
     if (logger) {
@@ -15,7 +21,7 @@ const initializeLogger = () => {
         level: `info`,
         transports: [new LokiTransport({
             host: `https://logs-prod-eu-west-0.grafana.net`,
-            basicAuth: `${user}:${password}`,
+            basicAuth: `${user}:${token}`,
             labels: { job: `playbook-testnet` },
             json: true,
             format: format.json(),
