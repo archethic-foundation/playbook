@@ -127,9 +127,4 @@ run()
         logger.error(msg)
         return 1
     })
-    .then(async (exitCode) => {
-        // wait 30secs after the run is done
-        // to allow the logger to send the logs to Loki
-        await new Promise(r => setTimeout(r, 30_000));
-        process.exit(exitCode)
-    })
+    .then(logger.exit_when_flush)
