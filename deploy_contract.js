@@ -117,25 +117,11 @@ async function run() {
 
                             logger.debug(`Contract's call transaction created - ${Utils.uint8ArrayToHex(callTx.address)}`)
 
-                            await new Promise(r => setTimeout(r, 2000));
-
-                            const { lastTransaction: { data: { content: lastContent } } } = await archethic.network.rawGraphQLQuery(`
-                    query
-                    {
-                      lastTransaction(address: "${Utils.uint8ArrayToHex(contractTx.address)}") {
-                        data {
-                            content
-                        }
-                      }
-                    }`)
-
-                            if (lastContent != "Contract executed") {
-                                reject(`Contract self trigger transaction not executed`)
-                                return
-                            }
-
-                            resolve("Contract's call transaction executed with success")
-                            return
+                            awaitTriggeredTransaction(archethic, contractTx.address)
+                                .then(() => {
+                                    resolve("Contract's call transaction executed with success")
+                                })
+                                .catch(reject)
                         })
                         .send()
                 })
@@ -145,6 +131,28 @@ async function run() {
             return
         }
     })
+}
+
+async function awaitTriggeredTransaction(archethic, contractAddress, retries = 0) {
+    await new Promise(r => setTimeout(r, 3000));
+    const { lastTransaction: { data: { content: lastContent } } } = await archethic.network.rawGraphQLQuery(`query
+        {
+          lastTransaction(address: "${Utils.uint8ArrayToHex(contractAddress)}") {
+            data {
+                content
+            }
+          }
+        }`)
+
+    if (lastContent != "Contract executed") {
+        if (retries == 3) {
+            throw "Contract self trigger transaction not executed"
+        }
+        else {
+            logger.info(`Retry attempt #${retries + 1}`)
+            await awaitTriggeredTransaction(archethic, contractAddress, retries + 1)
+        }
+    }
 }
 
 run()
