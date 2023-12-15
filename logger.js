@@ -31,7 +31,7 @@ const initializeLogger = () => {
     if (logger) return
 
     logger = createLogger({
-        level: `info`,
+        level: process.env["LOGGER_LEVEL"] || `info`,
         transports: loggerTransports
     })
 
